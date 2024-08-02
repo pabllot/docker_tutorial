@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Docker Guide</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+      }
+      code {
+        background-color: #f4f4f4;
+        padding: 2px 4px;
+        border-radius: 4px;
+      }
+      pre {
+        background-color: #f4f4f4;
+        padding: 10px;
+        border-radius: 4px;
+        overflow-x: auto;
+      }
+      .section-title {
+        color: #333;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Docker Guide</h1>
+
+    <h2 class="section-title">Important Commands</h2>
+    <p><code>docker run -it file.js</code><br />This will start the container and you'll be on the terminal directly in the container.</p>
+    <p><code>docker ps</code> shows active containers.</p>
+    <p><code>docker ps -a</code> shows all containers.</p>
+    <p>
+      To stop a container, you can use the name or the first 3 digits of the ID:<br />
+      <code>docker stop c3d</code>
+    </p>
+    <p><code>docker container prune</code> deletes all inactive containers for good.</p>
+    <p>Create a <code>.dockerignore</code> file to ignore <code>node_modules</code>.</p>
+    <p>
+      To remove one specific container:<br />
+      <code>docker rm container_name</code>
+    </p>
+
+    <h2 class="section-title">Steps</h2>
+    <p>Create a <code>Dockerfile</code></p>
+    <p>
+      Build the image (dot indicates the current directory, <code>-t</code> for tag):<br />
+      <code>docker build -t name_of_image .</code>
+    </p>
+    <p>Run the image to create a container:</p>
+    <h3>Vite</h3>
+    <p>
+      If using Vite, expose the host in the npm run dev command by changing the <code>package.json</code> script to:<br />
+      <code>"dev": "vite --host"</code><br />Then run it manually again:<br />
+      <code>docker run -p 5173:5173 name_of_image</code>
+    </p>
+    <p>
+      Command to run and watch for changes:<br />
+      <code>docker run -p 5173:5173 -v "$(pwd):/app" -v /app/node_modules name_of_image</code><br />
+      The <code>-v /app/node_modules</code> ensures we don't reinstall the node_modules after every time you start the container.
+    </p>
+
+    <h2 class="section-title">Docker Init</h2>
+    <p><code>docker init</code> creates the <code>Dockerfile</code> and <code>compose.yaml</code> for you.</p>
+    <p>
+      In <code>compose.yaml</code>, you can simplify the command:<br />
+      <code>docker run -p 5173:5173 -v "$(pwd):/app" -v /app/node_modules name_of_image</code><br />
+      to:<br />
+      <code>docker compose up</code><br />
+      by specifying what it should do in the yaml file once like so:
+    </p>
+    <pre>
+services:
+  web:
+    build:
+      context: .
+    ports: 
+      - 5173:5173
+    volumes:
+      - .:/app
+      - /app/node_modules
+    </pre>
+    <p>This is the same thing. Just run <code>docker compose up</code></p>
+
+    <h2 class="section-title">Docker Compose Watch</h2>
+    <p>A new feature that watches changes and automatically updates the services container while we work synchronously.</p>
+    <p>Example inside <code>compose.yaml</code>:</p>
+    <pre>
+services:
+  web:
+    build:
+      context: .
+    ports: 
+      - 5173:5173
+    volumes:
+      - .:/app
+      - /app/node_modules
+    develop:
+      watch:
+        - path: ./package.json
+          action: rebuild
+        - path: ./package-lock.json
+          action: rebuild
+        - path: /frontend
+          target: /app
+          action: sync
+    </pre>
+
+    <h2 class="section-title">For Full Stack Projects</h2>
+    <p>Create a <code>Dockerfile</code> in each folder (frontend/backend) but <code>compose.yaml</code> outside frontend/backend to serve both.</p>
+    <p>
+      Run the command to build everything and create the containers:<br />
+      <code>docker compose up</code><br />
+      (If permission is denied, open again as administrator if on Windows, or use <code>sudo</code> before the command if on Linux)
+    </p>
+    <p>
+      In a separate terminal, run:<br />
+      <code>docker compose watch</code><br />to watch for live changes.
+    </p>
+
+    <h3 class="section-title">Example of Simple Frontend Dockerfile:</h3>
+    <pre>
+FROM node:20-alpine3.18
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 5173
+
+CMD npm run dev
+    </pre>
+
+    <h3 class="section-title">Example of Simple Backend Dockerfile:</h3>
+    <pre>
+FROM node:20-alpine3.18
+
+RUN addgroup app && adduser -S -G app app
+
+USER app
+
+WORKDIR /app
+
+COPY package*.json ./
+
+USER root
+
+RUN chown -R app:app .
+
+USER app
+
+RUN npm install
+
+COPY . . 
+
+EXPOSE 8000 
+
+CMD npm start
+    </pre>
+
+    <h3 class="section-title">Example of Full Stack Compose.yaml:</h3>
+    <pre>
+version: "3.8"
+
+services:
+  web:
+    depends_on: 
+      - api
+    build: ./frontend
+    ports:
+      - 5173:5173
+    environment:
+      VITE_API_URL: http://localhost:8000
+    develop:
+      watch:
+        - path: ./frontend/package.json
+          action: rebuild
+        - path: ./frontend/package-lock.json
+          action: rebuild
+        - path: ./frontend
+          target: /app
+          action: sync
+  api: 
+    depends_on: 
+      - db
+    build: ./backend
+    ports: 
+      - 8000:8000
+    environment: 
+      DB_URL: mongodb://db/anime
+    develop:
+      watch:
+        - path: ./backend/package.json
+          action: rebuild
+        - path: ./backend/package-lock.json
+          action: rebuild
+        - path: ./backend
+          target: /app
+          action: sync
+  db:
+    image: mongo:latest
+    ports:
+      - 27017:27017
+    volumes:
+      - anime:/data/db
+
+volumes:
+  anime:
+    </pre>
+
+    <p>For further information, visit the <a href="https://github.com/adrianhajdin/docker-course">tutorial repository</a>.</p>
+  </body>
+</html>
